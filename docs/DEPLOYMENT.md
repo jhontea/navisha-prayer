@@ -104,23 +104,43 @@ curl -sI http://127.0.0.1:3010/ | head -n 1
 
 ## 4. Configure Nginx
 
-Copy the provided site config and enable it:
+Two configs are shipped:
+
+- `deploy/nginx/prayer.navisha.cloud.http.conf` — **HTTP-only bootstrap**, no
+  `ssl_*` lines. Use it for the very first certificate issuance.
+- `deploy/nginx/prayer.navisha.cloud.conf` — **full TLS config**. It references
+  Let's Encrypt cert paths, so it only passes `nginx -t` *after* a cert exists.
+
+> **Why two files?** The full config references
+> `/etc/letsencrypt/live/prayer.navisha.cloud/fullchain.pem`. Before that file
+> exists, `nginx -t` fails with `cannot load certificate ... No such file`,
+> and the certbot nginx plugin refuses to run. The HTTP-only config breaks this
+> chicken-and-egg by giving certbot a valid config to work with first.
+
+### Step 1 — Enable the HTTP-only bootstrap config
+
+```bash
+sudo cp deploy/nginx/prayer.navisha.cloud.http.conf \
+        /etc/nginx/sites-available/prayer.navisha.cloud.conf
+sudo ln -sf /etc/nginx/sites-available/prayer.navisha.cloud.conf \
+            /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Step 2 — Issue the TLS certificate
+
+```bash
+sudo certbot --nginx -d prayer.navisha.cloud
+```
+
+### Step 3 — Swap in the full TLS config
+
+Now that the cert exists, replace the bootstrap config with the full one and
+reload:
 
 ```bash
 sudo cp deploy/nginx/prayer.navisha.cloud.conf \
         /etc/nginx/sites-available/prayer.navisha.cloud.conf
-sudo ln -s /etc/nginx/sites-available/prayer.navisha.cloud.conf \
-           /etc/nginx/sites-enabled/
-```
-
-### Obtain the TLS certificate
-
-The shipped config already references Let's Encrypt paths. For a first-time
-issue, temporarily comment out the `ssl_*` lines and the `443` block, reload
-nginx, then run certbot which will populate them automatically:
-
-```bash
-sudo certbot --nginx -d prayer.navisha.cloud
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -192,5 +212,6 @@ docker compose restart backend
 | Prayer times wrong/Jakarta | Set location in Settings; default fallback is configurable in compose |
 | Frontend can't reach API | `NEXT_PUBLIC_API_URL` build arg should be empty (same-origin) |
 | Cert errors | `sudo certbot certificates`; re-run `certbot --nginx` |
+| `cannot load certificate .../fullchain.pem ... No such file` when running certbot | The full TLS config is enabled before a cert exists, so `nginx -t` fails and the certbot plugin won't run. Enable the **HTTP-only bootstrap** config first (`prayer.navisha.cloud.http.conf`), reload nginx, issue the cert, then swap in the full config — see Step 1–3 above. |
 | `Conflict. The container name "/navisha-prayer-backend" is already in use` | A stale container still holds the name. Run `docker compose down` then `docker compose up -d`. If it was created outside this compose project, run `docker rm -f navisha-prayer-backend navisha-prayer-frontend`, or `docker compose up -d --remove-orphans --force-recreate`. Do **not** use `down -v` (it deletes the database). |
 | Port `8010`/`3010` already allocated | An old container still holds the host port. Stop it with `docker compose down` (or `docker rm -f <old-container>`) before starting. |
