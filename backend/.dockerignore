@@ -1,0 +1,20 @@
+# Local environment & secrets — never bake these into the image
+.env
+*.env
+
+# Local SQLite data
+data/
+*.db
+
+# Build artifacts
+server
+*.exe
+
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Misc Go test helpers not needed in image
+check_db_main.go

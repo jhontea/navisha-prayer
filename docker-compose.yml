@@ -1,0 +1,54 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: navisha-prayer-backend:latest
+    container_name: navisha-backend
+    restart: unless-stopped
+    environment:
+      NAVISHA_SERVER_PORT: ":8010"
+      NAVISHA_SERVER_ENV: "production"
+      # Same-origin in production (nginx serves both UI and API on prayer.navisha.cloud)
+      NAVISHA_SERVER_ALLOW_ORIGINS: "https://prayer.navisha.cloud"
+      NAVISHA_ALADHAN_BASE_URL: "https://api.aladhan.com/v1"
+      NAVISHA_GEOCODING_BASE_URL: "https://geocoding-api.open-meteo.com/v1"
+      NAVISHA_DATABASE_PATH: "/app/data/navisha.db"
+      NAVISHA_DEFAULT_LAT: "-6.2088"
+      NAVISHA_DEFAULT_LON: "106.8456"
+      NAVISHA_DEFAULT_METHOD: "3"
+      NAVISHA_DEFAULT_TIMEZONE: "Asia/Jakarta"
+    volumes:
+      # Persist the SQLite database across container restarts/rebuilds
+      - navisha-data:/app/data
+    networks:
+      - navisha-net
+    # Bound to localhost only — nginx on the host proxies to it.
+    ports:
+      - "127.0.0.1:8010:8010"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Empty = relative URLs; nginx proxies /api/v1 to the backend.
+        NEXT_PUBLIC_API_URL: ""
+    image: navisha-prayer-frontend:latest
+    container_name: navisha-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - navisha-net
+    # Bound to localhost only — nginx on the host proxies to it.
+    # Host port 3010 (3000 is already in use on the VPS); container still listens on 3000.
+    ports:
+      - "127.0.0.1:3010:3000"
+
+networks:
+  navisha-net:
+    driver: bridge
+
+volumes:
+  navisha-data:

@@ -1,0 +1,168 @@
+# Deployment Guide — Navisha Prayer
+
+This guide deploys Navisha Prayer with Docker on the VPS
+(`103.139.193.21`) behind the existing Nginx, served at
+**https://prayer.navisha.cloud**.
+
+## Architecture
+
+```
+                       ┌─────────────────────────────────────────┐
+ Internet  ──HTTPS──▶  │  Nginx (host)  prayer.navisha.cloud      │
+                       │   /          → 127.0.0.1:3010 (frontend) │
+                       │   /api/...    → 127.0.0.1:8010 (backend)  │
+                       └───────────────┬─────────────┬───────────┘
+                                       │             │
+                          ┌────────────▼───┐   ┌─────▼───────────┐
+                          │ navisha-frontend│   │ navisha-backend │
+                          │ Next.js :3000   │   │ Go API :8010    │
+                          └─────────────────┘   └────────┬────────┘
+                                                          │
+                                                  ┌───────▼────────┐
+                                                  │ navisha-data    │
+                                                  │ (SQLite volume) │
+                                                  └────────────────┘
+```
+
+Both containers bind to `127.0.0.1` only — they are never exposed directly to
+the internet. Nginx on the host is the single public entry point.
+
+## Prerequisites
+
+On the VPS:
+
+- Docker Engine + Docker Compose plugin (`docker compose version`)
+- Nginx (already installed)
+- A DNS **A record**: `prayer.navisha.cloud → 103.139.193.21`
+- Certbot for TLS (`sudo apt install certbot python3-certbot-nginx`)
+
+## 1. Get the code onto the VPS
+
+```bash
+ssh root@103.139.193.21
+git clone <your-repo-url> /opt/navisha-prayer
+cd /opt/navisha-prayer
+```
+
+## 2. Review production environment
+
+Production config is set directly in `docker-compose.yml` under the `backend`
+service `environment` block. Adjust if needed:
+
+- `NAVISHA_SERVER_ALLOW_ORIGINS` → `https://prayer.navisha.cloud`
+- `NAVISHA_DEFAULT_LAT/LON/METHOD/TIMEZONE` → default location fallback
+- `NAVISHA_DATABASE_PATH` → `/app/data/navisha.db` (mapped to the `navisha-data` volume)
+
+> **Secrets:** Do not commit real API keys. The local `backend/.env` is
+> gitignored and excluded from the image via `.dockerignore`. If you add a
+> required secret later, inject it through the compose `environment` block or an
+> `env_file` that stays on the server only.
+
+## 3. Build and start the containers
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+Verify both are healthy:
+
+```bash
+# Backend health (through the localhost-bound port)
+curl -s http://127.0.0.1:8010/api/v1/health
+
+# Frontend
+curl -sI http://127.0.0.1:3010/ | head -n 1
+```
+
+## 4. Configure Nginx
+
+Copy the provided site config and enable it:
+
+```bash
+sudo cp deploy/nginx/prayer.navisha.cloud.conf \
+        /etc/nginx/sites-available/prayer.navisha.cloud.conf
+sudo ln -s /etc/nginx/sites-available/prayer.navisha.cloud.conf \
+           /etc/nginx/sites-enabled/
+```
+
+### Obtain the TLS certificate
+
+The shipped config already references Let's Encrypt paths. For a first-time
+issue, temporarily comment out the `ssl_*` lines and the `443` block, reload
+nginx, then run certbot which will populate them automatically:
+
+```bash
+sudo certbot --nginx -d prayer.navisha.cloud
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Certbot installs a renewal timer automatically. Test renewal with:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+## 5. Verify
+
+Open <https://prayer.navisha.cloud>:
+
+- Home page loads prayer times
+- Settings → search a city (e.g. "Majalengka") → prayer times update without reload
+- `https://prayer.navisha.cloud/api/v1/health` returns `{"status":"ok"}`
+
+## Updating to a new version
+
+```bash
+cd /opt/navisha-prayer
+git pull
+docker compose build
+docker compose up -d
+docker image prune -f   # optional: clean old layers
+```
+
+The SQLite database persists in the `navisha-data` volume across rebuilds.
+
+## Operations
+
+```bash
+# Logs
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# Restart a service
+docker compose restart backend
+
+# Stop everything
+docker compose down
+
+# Stop AND delete the database volume (destructive!)
+docker compose down -v
+```
+
+## Backup & restore the database
+
+```bash
+# Backup
+docker run --rm -v navisha-prayer_navisha-data:/data -v "$PWD":/backup \
+  alpine sh -c "cp /data/navisha.db /backup/navisha-backup-$(date +%F).db"
+
+# Restore
+docker run --rm -v navisha-prayer_navisha-data:/data -v "$PWD":/backup \
+  alpine sh -c "cp /backup/navisha-backup-YYYY-MM-DD.db /data/navisha.db"
+docker compose restart backend
+```
+
+> The volume name is prefixed with the compose project (directory) name. Run
+> `docker volume ls` to confirm the exact name on your server.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| 502 Bad Gateway | `docker compose ps` — are containers up and healthy? |
+| API 404 at `/api/...` | Nginx `location /api/` block present and reloaded? |
+| Prayer times wrong/Jakarta | Set location in Settings; default fallback is configurable in compose |
+| Frontend can't reach API | `NEXT_PUBLIC_API_URL` build arg should be empty (same-origin) |
+| Cert errors | `sudo certbot certificates`; re-run `certbot --nginx` |
