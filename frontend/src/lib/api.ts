@@ -9,7 +9,12 @@ import type { FastingResponse } from '../types/fasting';
 import type { EidCountdownResponse, HealthResponse } from '../types/api';
 import type { LocationResponse, CitySearchResponse } from '../types/location';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+// In production the build arg is set to an empty string so the browser uses
+// relative, same-origin URLs (nginx proxies /api/v1 to the backend). We use
+// `??` rather than `||` here on purpose: an empty string is a valid, intended
+// value ("same origin"), whereas `||` would wrongly fall back to localhost.
+// Only an unset (undefined) var falls back to the local dev backend.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 // Default request timeout (ms). Prevents the UI from hanging forever when the
 // backend is slow, down, or unreachable.

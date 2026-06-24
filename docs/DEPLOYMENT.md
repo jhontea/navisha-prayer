@@ -211,6 +211,7 @@ docker compose restart backend
 | API 404 at `/api/...` | Nginx `location /api/` block present and reloaded? |
 | Prayer times wrong/Jakarta | Set location in Settings; default fallback is configurable in compose |
 | Frontend can't reach API | `NEXT_PUBLIC_API_URL` build arg should be empty (same-origin) |
+| `Failed to find Server Action "…"` in frontend logs after a redeploy | Harmless. A browser tab still running the **old** build sent a request to the **new** container; build hashes change on every rebuild. Hard-refresh the browser (Ctrl+Shift+R) — fresh clients are unaffected. |
 | Cert errors | `sudo certbot certificates`; re-run `certbot --nginx` |
 | `cannot load certificate .../fullchain.pem ... No such file` when running certbot | The full TLS config is enabled before a cert exists, so `nginx -t` fails and the certbot plugin won't run. Enable the **HTTP-only bootstrap** config first (`prayer.navisha.cloud.http.conf`), reload nginx, issue the cert, then swap in the full config — see Step 1–3 above. |
 | `Conflict. The container name "/navisha-prayer-backend" is already in use` | A stale container still holds the name. Run `docker compose down` then `docker compose up -d`. If it was created outside this compose project, run `docker rm -f navisha-prayer-backend navisha-prayer-frontend`, or `docker compose up -d --remove-orphans --force-recreate`. Do **not** use `down -v` (it deletes the database). |
