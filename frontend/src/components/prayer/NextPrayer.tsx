@@ -21,12 +21,18 @@ export default function NextPrayer({ data }: NextPrayerProps) {
     );
   }
 
-  // Calculate seconds until next prayer
+  // Calculate seconds until next prayer.
   const now = new Date();
   const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   const [h, m] = nextPrayer.time.split(':').map(Number);
   const prayerSeconds = h * 3600 + m * 60;
-  const remainingSeconds = Math.max(0, prayerSeconds - currentSeconds);
+  // If the next prayer time is earlier in the clock than "now" (e.g. it's
+  // evening and the next prayer is tomorrow's Fajr), it falls on the next day,
+  // so add a full day. Without this the diff goes negative and the countdown
+  // would clamp to 00:00:00.
+  let diff = prayerSeconds - currentSeconds;
+  if (diff < 0) diff += 24 * 3600;
+  const remainingSeconds = diff;
 
   const countdown = useCountdown(remainingSeconds);
 
