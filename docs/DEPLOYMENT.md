@@ -170,6 +170,46 @@ docker image prune -f   # optional: clean old layers
 
 The SQLite database persists in the `navisha-data` volume across rebuilds.
 
+## Continuous deployment (GitHub Actions)
+
+A workflow at `.github/workflows/deploy.yml` deploys automatically on every
+push to `main` (and can be triggered manually from the Actions tab). It SSHes
+into the VPS and runs the same steps as a manual deploy: `git reset --hard
+origin/main` → `docker compose build` → `docker compose up -d` → health check.
+
+### One-time setup
+
+1. **Create a dedicated deploy SSH key** (on your machine or the VPS):
+
+   ```bash
+   ssh-keygen -t ed25519 -C "github-actions-deploy" -f deploy_key -N ""
+   ```
+
+2. **Authorize the public key on the VPS** (as the deploy user):
+
+   ```bash
+   cat deploy_key.pub >> ~/.ssh/authorized_keys
+   ```
+
+3. **Add repository secrets** in GitHub → Settings → Secrets and variables →
+   Actions → *New repository secret*:
+
+   | Secret | Value |
+   | --- | --- |
+   | `VPS_HOST` | `103.139.193.21` |
+   | `VPS_USER` | `ahmadhafizh` |
+   | `VPS_SSH_KEY` | contents of the **private** `deploy_key` file |
+   | `VPS_PORT` | *(optional)* SSH port, defaults to `22` |
+   | `VPS_APP_DIR` | *(optional)* repo path, defaults to `~/navisha-prayer` |
+
+4. **Ensure the deploy user can run Docker without sudo** (`docker` group) and
+   that the repo is already cloned at `VPS_APP_DIR` — the workflow updates an
+   existing checkout, it does not clone fresh.
+
+> The workflow uses `git reset --hard origin/main`, which discards any local
+> changes on the server. Keep server-only files (e.g. a private `env_file`)
+> outside the repo or gitignored so they are not wiped.
+
 ## Operations
 
 ```bash

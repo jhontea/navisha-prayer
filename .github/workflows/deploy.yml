@@ -1,0 +1,79 @@
+name: Deploy to VPS
+
+# Deploys Navisha Prayer to the VPS over SSH.
+#
+# Flow: the workflow connects to the server, pulls the latest code in the
+# existing checkout, rebuilds the Docker images and restarts the stack — the
+# same steps documented in docs/DEPLOYMENT.md, just automated.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST        e.g. 103.139.193.21
+#   VPS_USER        e.g. ahmadhafizh
+#   VPS_SSH_KEY     a private SSH key whose public key is in the server's
+#                   ~/.ssh/authorized_keys (use a dedicated deploy key)
+# Optional secrets/vars:
+#   VPS_PORT        SSH port (defaults to 22)
+#   VPS_APP_DIR     path to the cloned repo (defaults to ~/navisha-prayer)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  # Never run two deploys at once; cancel an in-progress one if a newer push lands.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & deploy on VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.VPS_APP_DIR || '~/navisha-prayer' }}"
+            # Expand a leading ~ to the real home directory.
+            APP_DIR="${APP_DIR/#\~/$HOME}"
+
+            echo "==> Deploying in $APP_DIR"
+            cd "$APP_DIR"
+
+            echo "==> Pulling latest code"
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            echo "==> Building images"
+            docker compose build
+
+            echo "==> Starting containers"
+            docker compose up -d --remove-orphans
+
+            echo "==> Pruning old images"
+            docker image prune -f
+
+            echo "==> Container status"
+            docker compose ps
+
+            echo "==> Health check"
+            for i in $(seq 1 10); do
+              if curl -fsS http://127.0.0.1:8010/api/v1/health >/dev/null; then
+                echo "Backend healthy."
+                break
+              fi
+              if [ "$i" -eq 10 ]; then
+                echo "Backend did not become healthy in time." >&2
+                docker compose logs --tail=50 backend >&2
+                exit 1
+              fi
+              echo "Waiting for backend... ($i/10)"
+              sleep 3
+            done
