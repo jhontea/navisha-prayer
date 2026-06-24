@@ -13,10 +13,11 @@ This guide deploys Navisha Prayer with Docker on the VPS
                        │   /api/...    → 127.0.0.1:8010 (backend)  │
                        └───────────────┬─────────────┬───────────┘
                                        │             │
-                          ┌────────────▼───┐   ┌─────▼───────────┐
-                          │ navisha-frontend│   │ navisha-backend │
-                          │ Next.js :3000   │   │ Go API :8010    │
-                          └─────────────────┘   └────────┬────────┘
+                       ┌───────────────────┐   ┌─────────────────────┐
+                       │ navisha-prayer-    │   │ navisha-prayer-      │
+                       │ frontend           │   │ backend              │
+                       │ Next.js :3000      │   │ Go API :8010         │
+                       └───────────────────┘   └──────────┬──────────┘
                                                           │
                                                   ┌───────▼────────┐
                                                   │ navisha-data    │
@@ -38,11 +39,36 @@ On the VPS:
 
 ## 1. Get the code onto the VPS
 
+SSH in as your user (example user: `ahmadhafizh`):
+
 ```bash
-ssh root@103.139.193.21
+ssh ahmadhafizh@103.139.193.21
+```
+
+**Option A — clone into your home directory (no sudo needed, recommended):**
+
+```bash
+git clone <your-repo-url> ~/navisha-prayer
+cd ~/navisha-prayer
+```
+
+**Option B — clone into `/opt` (system-wide, requires sudo):**
+
+```bash
+# /opt is root-owned, so create the dir with sudo and hand it to your user
+sudo mkdir -p /opt/navisha-prayer
+sudo chown "$USER":"$USER" /opt/navisha-prayer
 git clone <your-repo-url> /opt/navisha-prayer
 cd /opt/navisha-prayer
 ```
+
+> Your user must be in the `docker` group to run `docker compose` without sudo:
+> ```bash
+> sudo usermod -aG docker "$USER"      # then log out and back in
+> ```
+> The rest of this guide assumes you run commands from the cloned directory.
+> If you chose Option B, replace `~/navisha-prayer` with `/opt/navisha-prayer`.
+
 
 ## 2. Review production environment
 
@@ -115,7 +141,7 @@ Open <https://prayer.navisha.cloud>:
 ## Updating to a new version
 
 ```bash
-cd /opt/navisha-prayer
+cd ~/navisha-prayer   # or /opt/navisha-prayer if you used Option B
 git pull
 docker compose build
 docker compose up -d
@@ -166,3 +192,5 @@ docker compose restart backend
 | Prayer times wrong/Jakarta | Set location in Settings; default fallback is configurable in compose |
 | Frontend can't reach API | `NEXT_PUBLIC_API_URL` build arg should be empty (same-origin) |
 | Cert errors | `sudo certbot certificates`; re-run `certbot --nginx` |
+| `Conflict. The container name "/navisha-prayer-backend" is already in use` | A stale container still holds the name. Run `docker compose down` then `docker compose up -d`. If it was created outside this compose project, run `docker rm -f navisha-prayer-backend navisha-prayer-frontend`, or `docker compose up -d --remove-orphans --force-recreate`. Do **not** use `down -v` (it deletes the database). |
+| Port `8010`/`3010` already allocated | An old container still holds the host port. Stop it with `docker compose down` (or `docker rm -f <old-container>`) before starting. |

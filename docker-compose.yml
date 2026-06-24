@@ -4,7 +4,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     image: navisha-prayer-backend:latest
-    container_name: navisha-backend
+    container_name: navisha-prayer-backend
     restart: unless-stopped
     environment:
       NAVISHA_SERVER_PORT: ":8010"
@@ -35,7 +35,7 @@ services:
         # Empty = relative URLs; nginx proxies /api/v1 to the backend.
         NEXT_PUBLIC_API_URL: ""
     image: navisha-prayer-frontend:latest
-    container_name: navisha-frontend
+    container_name: navisha-prayer-frontend
     restart: unless-stopped
     depends_on:
       - backend
